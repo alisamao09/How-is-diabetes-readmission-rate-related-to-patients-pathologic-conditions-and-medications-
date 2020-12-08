@@ -6,6 +6,7 @@ editor_options:
 ---
 
 ```{r}
+# Load and clean dataset
 dat<-read.csv("diabetes.csv")
 dat1<-dat[,-c(1,7,12,49)]
 library(tidyverse)
@@ -26,31 +27,14 @@ train <- dat1[sample(nrow(dat1), size = 20000),]
 nrow(train)
 test <- dat1[!dat1$patient_nbr %in% train$patient_nbr,]
 nrow(test)
+
+# Fit a glm with all predictors at first
 model<-glm(readmitted~.,data=train[, -c(1,2,8,25,28,33,35,36,39,40,41,42)],family = binomial(link="logit"))
 
+# Chi-square test between predictors
 chisq.test(train$readmitted,train$race)
-chisq.test(train$gender,train$readmitted)
-chisq.test(train$age,train$readmitted)
-chisq.test(train$max_glu_serum,train$readmitted)
-chisq.test(train$A1Cresult,train$readmitted)
-chisq.test(train$metformin,train$readmitted)
-chisq.test(train$medical_specialty,train$readmitted)
-chisq.test(train$repaglinide,train$readmitted)
-chisq.test(train$nateglinide,train$readmitted)
-chisq.test(train$chlorpropamide,train$readmitted)
-chisq.test(train$glimepiride,train$readmitted)
-chisq.test(train$glipizide,train$readmitted)
-chisq.test(train$glyburide,train$readmitted)
-chisq.test(train$pioglitazone,train$readmitted)
-chisq.test(train$rosiglitazone,train$readmitted)
-chisq.test(train$acarbose,train$readmitted)
-chisq.test(train$miglitol,train$readmitted)
-chisq.test(train$tolazamide,train$readmitted)
-chisq.test(train$insulin,train$readmitted)
-chisq.test(train$glyburide.metformin,train$readmitted)
-chisq.test(train$change,train$readmitted)
-chisq.test(train$diabetesMed,train$readmitted)
 
+# Variable selections
 #AIC
 lmodred<-step(model, trace=0)
 summary(lmodred)
@@ -59,7 +43,7 @@ summary(lmodredfor) #full
 lmodredback<-step(model, trace=0,direction="backward")
 summary(lmodredback) #same aic
 
-#fit
+# Mutate properties of the training dataset
 library(tidyverse)
 train <- mutate(train, predprob=predict(lmodred,type='response'),linpred=predict(lmodred))
 gdfbic <- group_by(train, ntile(linpred,100))
@@ -68,13 +52,14 @@ hldfbic<-mutate(hldfbic,se.fit=sqrt(ppred*(1-ppred)/count))
 hlstatbic <- with(hldfbic, sum((y-count*ppred)^2/(count*ppred*(1-ppred))))
 1-pchisq(hlstatbic,100-2)
 
-#Prediction AIC
+#Prediction AIC, cross validation
 library(rms)
 lrm.final <- lrm(readmitted ~ race + gender + age + admission_type_id + discharge_disposition_id + Length.of.Stay + medical_specialty + num_procedures + number_outpatient + number_emergency + number_inpatient + number_diagnoses + metformin + repaglinide + nateglinide + glipizide + pioglitazone + rosiglitazone + acarbose + diabetesMed, data=train[, -c(1,2,8,25,28,33,35,36,39,40,41,42)],  x =TRUE, y = TRUE, model= T)
 cross.calib<-calibrate(lrm.final, method="crossvalidation", B=10) # model calibration
 par(family = 'serif')
 plot(cross.calib, las=1, xlab = "Predicted Probability")
 
+# AUC
 p <- fitted(lmodred)
 roc_logit2 <- roc(train$readmitted~ p)
 TPR2 <- roc_logit2$sensitivities
@@ -83,6 +68,7 @@ plot(FPR2, TPR2, xlim = c(0,1), ylim = c(0,1), type = 'l', lty = 1, lwd = 2,col 
 abline(a = 0, b = 1, lty = 2, col = 'blue')
 text(0.7,0.4,label = paste("AUC = ", round(auc(roc_logit2),2)))
 
+# predicted vs observed
 lmodred$xlevels[["medical_specialty"]] <- union(lmodred$xlevels[["medical_specialty"]], levels(test$medical_specialty))
 model.matrix(lmodred)
 lmodred$xlevels[["nateglinide"]] <- union(lmodred$xlevels[["nateglinide"]], levels(test$nateglinide))
@@ -95,8 +81,8 @@ par(family = 'serif')
 plot(pred.prob, obs.prob, type = "l", ylab = "Observed",xlab = "Predicted", xlim = c(0,1), ylim = c(-1,1))
 abline(a=0, b=1)
 
+#MPE
 pred.y <- predict(lmodred, newdata = test, type = "response")
-## Prediction error ##
 mean((test$readmitted - pred.y)^2)
 
 # Diagnostics
@@ -136,10 +122,11 @@ halfnorm(residuals(lmodred))
 
 
 ```{r}
-#AICsig
+#AICsig model
 modelaicsig <- glm(readmitted ~ race+gender+admission_type_id +Length.of.Stay+num_procedures+number_outpatient+number_emergency +number_inpatient+number_diagnoses+diabetesMed+insulin, family = binomial(link="logit"), data = train[, -c(1,2,8,25,28,33,35,36,39,40,41,42)])
 summary(modelaicsig)
 
+# training dataset
 train <- mutate(train, predprob=predict(modelaicsig,type='response'),linpred=predict(modelaicsig))
 gdfbic <- group_by(train, ntile(linpred,100))
 hldfbic<-summarise(gdfbic,y=sum(readmitted=="1"),ppred=mean(predprob),count=n())
@@ -147,11 +134,13 @@ hldfbic<-mutate(hldfbic,se.fit=sqrt(ppred*(1-ppred)/count))
 hlstatbic <- with(hldfbic, sum((y-count*ppred)^2/(count*ppred*(1-ppred))))
 1-pchisq(hlstatbic,100-2)
 
+# Cross validation
 lrm.finalaicsig <- lrm(readmitted ~ race+gender+admission_type_id +Length.of.Stay+num_procedures+number_outpatient+number_emergency +number_inpatient+number_diagnoses+diabetesMed, data=train[, -c(1,2,8,25,28,33,35,36,39,40,41,42)],  x =TRUE, y = TRUE, model= T)
 cross.calibaicsig <- calibrate(lrm.finalaicsig, method="crossvalidation", B=10) # model calibration
 par(family = 'serif')
 plot(cross.calibaicsig, las=1, xlab = "Predicted Probability")
 
+#AUC
 paicsig <- fitted(modelaicsig)
 roc_logit2aicsig <- roc(train$readmitted~ paicsig)
 TPR2aicsig <- roc_logit2aicsig$sensitivities
@@ -160,6 +149,7 @@ plot(FPR2aicsig, TPR2aicsig, xlim = c(0,1), ylim = c(0,1), type = 'l', lty = 1, 
 abline(a = 0, b = 1, lty = 2, col = 'blue')
 text(0.7,0.4,label = paste("AUC = ", round(auc(roc_logit2aicsig),2)))
 
+#Predicted vs observed
 modelaicsig$xlevels[["medical_specialty"]] <- union(modelaicsig$xlevels[["medical_specialty"]], levels(test$medical_specialty))
 modelaicsig$xlevels[["nateglinide"]] <- union(modelaicsig$xlevels[["nateglinide"]], levels(test$nateglinide))
 test$pred.probaicsig <- predict(modelaicsig, newdata = test, type = "response")
@@ -171,8 +161,8 @@ par(family = 'serif')
 plot(pred.probaicsig, obs.probaicsig, type = "l", ylab = "Observed",xlab = "Predicted", xlim = c(0,1), ylim = c(-1,1))
 abline(a=0, b=1)
 
+#MPE
 pred.ysig <- predict(modelaicsig, newdata = test, type = "response")
-## Prediction error ##
 mean((test$readmitted - pred.ysig)^2)
 
 #Diagnostics
@@ -212,7 +202,7 @@ halfnorm(residuals(lmodred))
 
 
 ```{r}
-#BIC
+#BIC variable selection
 lmod<-step(model, trace=0,k=log(20000))
 summary(lmod) 
 lmodfor<-step(model, trace=0,k=log(20000),direction="forward")
@@ -220,7 +210,7 @@ summary(lmodfor) #full
 lmodback<-step(model, trace=0,k=log(20000),direction="backward")
 summary(lmodback) #same as bic
 
-#fit
+#train
 train <- mutate(train, predprob=predict(lmod,type='response'),linpred=predict(lmod))
 gdfbic <- group_by(train, ntile(linpred,100))
 hldfbic<-summarise(gdfbic,y=sum(readmitted=="1"),ppred=mean(predprob),count=n())
@@ -235,6 +225,8 @@ lrm.finalbic <- lrm(readmitted ~ admission_type_id + Length.of.Stay + num_proced
 cross.calibbic <- calibrate(lrm.finalbic, method="crossvalidation", B=10) # model calibration
 par(family = 'serif')
 plot(cross.calibbic, las=1, xlab = "Predicted Probability")
+
+#AUC
 p1 <- fitted(lmod)
 roc_logit21 <- roc(train$readmitted~ p1)
 TPR21 <- roc_logit21$sensitivities
@@ -243,6 +235,7 @@ plot(FPR21, TPR21, xlim = c(0,1), ylim = c(0,1), type = 'l', lty = 1, lwd = 2,co
 abline(a = 0, b = 1, lty = 2, col = 'blue')
 text(0.7,0.4,label = paste("AUC = ", round(auc(roc_logit21),2)))
 
+#Predicted vs observed
 lmod$xlevels[["medical_specialty"]] <- union(lmod$xlevels[["medical_specialty"]], levels(test$medical_specialty))
 lmod$xlevels[["nateglinide"]] <- union(lmod$xlevels[["nateglinide"]], levels(test$nateglinide))
 test$pred.prob1 <- predict(lmod, newdata = test, type = "response")
@@ -291,7 +284,7 @@ ggplot(aes(x= Length.of.Stay ,y=residuals,size=sqrt(count))) +  geom_point()
 
 
 ```{r}
-#LASSO
+#LASSO model
 cv.out <- cv.glmnet(x = model.matrix( ~ ., data = train[, -c(1,2,8,25,28,33,35,36,39,40,41,42,45)]), 
                     y = train$readmitted, standardize = T, alpha = 0.5)
 
@@ -299,6 +292,7 @@ best.lambda <- cv.out$lambda.1se
 best.lambda
 co<-coef(cv.out, s = "lambda.1se")
 thresh <- 0.00
+
 # select variables #
 inds<-which(abs(co) > thresh )
 variables<-row.names(co)[inds]
@@ -307,6 +301,7 @@ sel.var.lasso
 modellasso<-glm(readmitted ~ race+ gender+ age+ admission_type_id+ Length.of.Stay+ medical_specialty+ num_procedures+ number_outpatient+ number_emergency+ number_inpatient+ number_diagnoses+ max_glu_serum+ metformin+ repaglinide+ pioglitazone+ acarbose+ change+diabetesMed, data=train[, -c(1,2,8,25,28,33,35,36,39,40,41,42)])
 summary(modellasso)
 
+#train
 train <- mutate(train, predprob=predict(modellasso,type='response'),linpred=predict(modellasso))
 gdfbic <- group_by(train, ntile(linpred,100))
 hldfbic<-summarise(gdfbic,y=sum(readmitted=="1"),ppred=mean(predprob),count=n())
@@ -314,10 +309,13 @@ hldfbic<-mutate(hldfbic,se.fit=sqrt(ppred*(1-ppred)/count))
 hlstatbic <- with(hldfbic, sum((y-count*ppred)^2/(count*ppred*(1-ppred))))
 1-pchisq(hlstatbic,100-2)
 
+#cross validation
 lrm.finallasso <- lrm(readmitted ~ race+ gender+ age+ admission_type_id+ Length.of.Stay+ medical_specialty+ num_procedures+ number_outpatient+ number_emergency+ number_inpatient+ number_diagnoses+ max_glu_serum+ metformin+ repaglinide+ pioglitazone+ acarbose+ change+diabetesMed, data=train[, -c(1,2,8,25,28,33,35,36,39,40,41,42)],  x =TRUE, y = TRUE, model= T)
 cross.caliblasso <- calibrate(lrm.finallasso, method="crossvalidation", B=10) # model calibration
 par(family = 'serif')
 plot(cross.caliblasso, las=1, xlab = "Predicted Probability")
+
+#AUC
 library(pROC)
 plasso <- fitted(modellasso)
 roc_logit2lasso <- roc(train$readmitted~ plasso)
@@ -327,6 +325,7 @@ plot(FPR2lasso, TPR2lasso, xlim = c(0,1), ylim = c(0,1), type = 'l', lty = 1, lw
 abline(a = 0, b = 1, lty = 2, col = 'blue')
 text(0.7,0.4,label = paste("AUC = ", round(auc(roc_logit21),2)))
 
+#Predicted vs observed
 modellasso$xlevels[["medical_specialty"]] <- union(modellasso$xlevels[["medical_specialty"]], levels(test$medical_specialty))
 modellasso$xlevels[["nateglinide"]] <- union(modellasso$xlevels[["nateglinide"]], levels(test$nateglinide))
 test$pred.problasso <- predict(modellasso, newdata = test, type = "response")
@@ -349,10 +348,11 @@ mean((test$readmitted - pred.ylasso)^2)
 
 
 ```{r}
-# LASSO sig
+# LASSO sig model
 modellassosig<-glm(readmitted ~ race+ gender+admission_type_id+ Length.of.Stay+  num_procedures+ number_outpatient+ number_emergency+ number_inpatient+ number_diagnoses+diabetesMed, data=train[, -c(1,2,8,25,28,33,35,36,39,40,41,42)])
 summary(modellassosig)
 
+#train
 train <- mutate(train, predprob=predict(modellassosig,type='response'),linpred=predict(modellassosig))
 gdfbic <- group_by(train, ntile(linpred,100))
 hldfbic<-summarise(gdfbic,y=sum(readmitted=="1"),ppred=mean(predprob),count=n())
@@ -360,10 +360,13 @@ hldfbic<-mutate(hldfbic,se.fit=sqrt(ppred*(1-ppred)/count))
 hlstatbic <- with(hldfbic, sum((y-count*ppred)^2/(count*ppred*(1-ppred))))
 1-pchisq(hlstatbic,100-2)
 
+# cross validation
 lrm.finallassosig <- lrm(readmitted ~ race+ gender+admission_type_id+ Length.of.Stay+  num_procedures+ number_outpatient+ number_emergency+ number_inpatient+ number_diagnoses+diabetesMed, data=train[, -c(1,2,8,25,28,33,35,36,39,40,41,42)],  x =TRUE, y = TRUE, model= T)
 cross.caliblassosig <- calibrate(lrm.finallassosig, method="crossvalidation", B=10) # model calibration
 par(family = 'serif')
 plot(cross.caliblassosig, las=1, xlab = "Predicted Probability")
+
+# AUC
 library(pROC)
 plassosig <- fitted(modellassosig)
 roc_logit2lassosig <- roc(train$readmitted~ plassosig)
@@ -373,6 +376,7 @@ plot(FPR2lassosig, TPR2lassosig, xlim = c(0,1), ylim = c(0,1), type = 'l', lty =
 abline(a = 0, b = 1, lty = 2, col = 'blue')
 text(0.7,0.4,label = paste("AUC = ", round(auc(roc_logit2lassosig),2)))
 
+#Predicted vs observed
 modellassosig$xlevels[["medical_specialty"]] <- union(modellassosig$xlevels[["medical_specialty"]], levels(test$medical_specialty))
 modellassosig$xlevels[["nateglinide"]] <- union(modellassosig$xlevels[["nateglinide"]], levels(test$nateglinide))
 test$pred.problassosig <- predict(modellassosig, newdata = test, type = "response")
@@ -397,7 +401,8 @@ anova(modellasso, lmodred,test='LRT')
 
 
 ```{r}
-#GLMM BIC
+#GLMM BIC model
+# clean and organize dataset
 library(lme4)
 dat2<-dat[,-c(1,7,12,49)]
 dat2$readmitted<-ifelse(dat2$readmitted=="NO", 0, 1)
@@ -414,6 +419,7 @@ nrow(train1)
 test1 <- dat2[!dat2$patient_nbr %in% train1$patient_nbr,]
 nrow(test1)
 
+#fit
 mmodbic <- lmer(readmitted~admission_type_id + Length.of.Stay + num_procedures + num_medications + number_outpatient + number_emergency + number_inpatient + number_diagnoses + diabetesMed+(1|patient_nbr),  data = train1[, -c(25,28,33,35,36,39,40,41,42)])
 summary(mmodbic)
 confint(mmodbic, method='boot')
@@ -423,27 +429,6 @@ exactRLRT(mmodbic)
 ranef(mmodbic)$patient_nbr
 
 #prediction 
-#library(cvms)
-set.seed(1003928039)
-#library(groupdata2)
-#data <- fold(
-#  data = train1[, -c(25,28,33,35,36,39,40,41,42)], k = 5,
- # cat_col = 'readmitted') %>% 
- # arrange(.folds)
-#library(caTools)
-#library(caret)
-#ind=createDataPartition(dat2$readmitted,list=FALSE)
-#traindat<-dat2[ind,]
-#testdat<-dat2[-ind,]
-#controlpara<-trainControl(method="cv",number=5,savePredictions = TRUE,classProbs = TRUE)
-#praragrid<-expend.grid(readmitted=c(0,1))
-#modelrandom<-train(readmitted ~ admission_type_id + Length.of.Stay + num_procedures + num_medications + number_outpatient+ number_emergency + number_inpatient + number_diagnoses + diabetesMed+(1|patient_nbr),data=traindat,method="rf")
-
-#lrm.finalbiclmm <- lrm(readmitted ~ admission_type_id + Length.of.Stay + num_procedures + num_medications + number_outpatient+ number_emergency + number_inpatient + number_diagnoses + diabetesMed+(1|patient_nbr),data = train1[, -c(25,28,33,35,36,39,40,41,42)])
-#cross.caliblclmm <- calibrate(lrm.finalbiclmm, method="crossvalidation", B=10) # model calibration
-#par(family = 'serif')
-#plot(cross.caliblassosig, las=1, xlab = "Predicted Probability")
-#plot(lrm.finalbiclmm)
 library(pROC)
 p1lmm <- fitted(mmodbic)
 roc_logit2lmm <- roc(train1$readmitted~ p1lmm)
@@ -453,6 +438,7 @@ plot(FPR2lmm, TPR2lmm, xlim = c(0,1), ylim = c(0,1), type = 'l', lty = 1, lwd = 
 abline(a = 0, b = 1, lty = 2, col = 'blue')
 text(0.7,0.4,label = paste("AUC = ", round(auc(roc_logit2lmm),2)))
 
+#Predicted vs observed
 test1$pred.prob1lmm <- predict(scale, newdata = test1, type = "response",allow.new.levels = TRUE)
 deciles1lmm <-  quantile(test1$pred.prob1lmm, probs = seq(0,1, by =0.1))
 test1$decile1lmm <- findInterval(test1$pred.prob1lmm, deciles1lmm, rightmost.closed = T)
@@ -486,7 +472,7 @@ halfnorm(residuals,resType='pearson')
 
 library(tidyverse)
 
-
+# try to transform variables
 group_by(train1, diabetesMed) %>%
 summarise(residuals=mean(residuals), count=n()) %>%
 ggplot(aes(x= diabetesMed ,y=residuals,size=sqrt(count))) +  geom_point()
@@ -521,10 +507,10 @@ mean((test1$readmitted - pred.ybicglmm)^2)
 
 
 ```{r}
-#AICSIG
+#AICSIG model
 mmodaicsig <- lmer(readmitted~race+gender+admission_type_id   +Length.of.Stay+num_procedures+number_outpatient+number_emergency +number_inpatient+number_diagnoses+diabetesMed+insulin + (1|patient_nbr), data = train1[, -c(25,28,33,35,36,39,40,41,42)])
 summary(mmodaicsig)
-
+#AUC
 p1aiclmm <- fitted(mmodaicsig)
 roc_logit2lmmaic <- roc(train1$readmitted~ p1aiclmm)
 TPR2lmmaic <- roc_logit2lmmaic$sensitivities
@@ -533,6 +519,7 @@ plot(FPR2lmmaic, TPR2lmmaic, xlim = c(0,1), ylim = c(0,1), type = 'l', lty = 1, 
 abline(a = 0, b = 1, lty = 2, col = 'blue')
 text(0.7,0.4,label = paste("AUC = ", round(auc(roc_logit2lmmaic),2)))
 
+#Predicted vs observed
 test1$pred.prob1lmmaic <- predict(mmodaicsig, newdata = test1, type = "response",allow.new.levels = TRUE)
 deciles1lmmaic <-  quantile(test1$pred.prob1lmmaic, probs = seq(0,1, by =0.1))
 test1$decile1lmmaic <- findInterval(test1$pred.prob1lmmaic, deciles1lmmaic, rightmost.closed = T)
@@ -558,6 +545,7 @@ library(lme4)
 mmodlassosig <- lmer(readmitted~race+gender+admission_type_id   +Length.of.Stay+num_procedures+number_outpatient+number_emergency +number_inpatient+number_diagnoses+diabetesMed+(1|patient_nbr), data = train1[, -c(25,28,33,35,36,39,40,41,42)])
 summary(mmodlassosig)
 
+#AUC
 p1lassosig <- fitted(mmodlassosig)
 roc_logit2lassosig <- roc(train1$readmitted~ p1lassosig)
 TPR2lassosig <- roc_logit2lassosig$sensitivities
@@ -566,6 +554,7 @@ plot(FPR2lassosig, TPR2lassosig, xlim = c(0,1), ylim = c(0,1), type = 'l', lty =
 abline(a = 0, b = 1, lty = 2, col = 'blue')
 text(0.7,0.4,label = paste("AUC = ", round(auc(roc_logit2lassosig),2)))
 
+#Predicted vs observed
 test1$pred.prob1lassosig <- predict(mmodlassosig, newdata = test1, type = "response",allow.new.levels = TRUE)
 deciles1lassosig <-  quantile(test1$pred.prob1lassosig, probs = seq(0,1, by =0.1))
 test1$decile1lassosig <- findInterval(test1$pred.prob1lassosig, deciles1lassosig, rightmost.closed = T)
