@@ -5,7 +5,7 @@ editor_options:
   chunk_output_type: inline
 ---
 
-```{r}
+
 # Load and clean dataset
 dat<-read.csv("diabetes.csv")
 dat1<-dat[,-c(1,7,12,49)]
@@ -115,13 +115,6 @@ library(faraway)
 halfnorm(residuals(lmodred))
 
 
-```
-
-
-
-
-
-```{r}
 #AICsig model
 modelaicsig <- glm(readmitted ~ race+gender+admission_type_id +Length.of.Stay+num_procedures+number_outpatient+number_emergency +number_inpatient+number_diagnoses+diabetesMed+insulin, family = binomial(link="logit"), data = train[, -c(1,2,8,25,28,33,35,36,39,40,41,42)])
 summary(modelaicsig)
@@ -195,13 +188,7 @@ plot1
 plot2
 library(faraway)
 halfnorm(residuals(lmodred))
-```
 
-
-
-
-
-```{r}
 #BIC variable selection
 lmod<-step(model, trace=0,k=log(20000))
 summary(lmod) 
@@ -277,13 +264,7 @@ halfnorm(residuals(mmodbic))
 group_by(train, Length.of.Stay  ) %>%
 summarise(residuals=mean(residuals), count=n()) %>%
 ggplot(aes(x= Length.of.Stay ,y=residuals,size=sqrt(count))) +  geom_point()
-```
 
-
-
-
-
-```{r}
 #LASSO model
 cv.out <- cv.glmnet(x = model.matrix( ~ ., data = train[, -c(1,2,8,25,28,33,35,36,39,40,41,42,45)]), 
                     y = train$readmitted, standardize = T, alpha = 0.5)
@@ -340,14 +321,7 @@ abline(a=0, b=1)
 pred.ylasso <- predict(modellasso, newdata = test, type = "response")
 ## Prediction error ##
 mean((test$readmitted - pred.ylasso)^2)
-```
 
-
-
-
-
-
-```{r}
 # LASSO sig model
 modellassosig<-glm(readmitted ~ race+ gender+admission_type_id+ Length.of.Stay+  num_procedures+ number_outpatient+ number_emergency+ number_inpatient+ number_diagnoses+diabetesMed, data=train[, -c(1,2,8,25,28,33,35,36,39,40,41,42)])
 summary(modellassosig)
@@ -394,13 +368,7 @@ mean((test$readmitted - pred.ylassosig)^2)
 
 anova(modellasso, lmodred, test='Chi')
 anova(modellasso, lmodred,test='LRT')
-```
 
-
-
-
-
-```{r}
 #GLMM BIC model
 # clean and organize dataset
 library(lme4)
@@ -500,13 +468,7 @@ abline(a=0, b=1)
 pred.ybicglmm <- predict(mmodbic, newdata = test1, type = "response",allow.new.levels = TRUE)
 ## Prediction error ##
 mean((test1$readmitted - pred.ybicglmm)^2)
-```
 
-
-
-
-
-```{r}
 #AICSIG model
 mmodaicsig <- lmer(readmitted~race+gender+admission_type_id   +Length.of.Stay+num_procedures+number_outpatient+number_emergency +number_inpatient+number_diagnoses+diabetesMed+insulin + (1|patient_nbr), data = train1[, -c(25,28,33,35,36,39,40,41,42)])
 summary(mmodaicsig)
@@ -533,13 +495,6 @@ pred.ybicglmmaic <- predict(mmodaicsig, newdata = test1, type = "response",allow
 ## Prediction error ##
 mean((test1$readmitted - pred.ybicglmmaic)^2)
 
-```
-
-
-
-
-
-```{r}
 #LASSO SIG
 library(lme4)
 mmodlassosig <- lmer(readmitted~race+gender+admission_type_id   +Length.of.Stay+num_procedures+number_outpatient+number_emergency +number_inpatient+number_diagnoses+diabetesMed+(1|patient_nbr), data = train1[, -c(25,28,33,35,36,39,40,41,42)])
